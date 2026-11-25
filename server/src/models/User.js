@@ -49,6 +49,11 @@ const userSchema = new mongoose.Schema(
       select: false
     },
 
+    oauth: {
+      googleId: { type: String, unique: true, sparse: true, select: false },
+      githubId: { type: String, unique: true, sparse: true, select: false }
+    },
+
     role: {
       type: String,
       enum: ["student", "admin", "superadmin"],

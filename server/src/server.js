@@ -14,6 +14,8 @@ DATE: 23/11/2026
 // =============================================================================
 import mongoose from "mongoose";
 import "dotenv/config";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import express from "express";
 import cors from "cors";
@@ -24,12 +26,19 @@ import connectDB from "./config/db.js";
 
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import contentRoutes from "./routes/contentRoutes.js";
+import learningRoutes from "./routes/learningRoutes.js";
+import executionRoutes from "./routes/executionRoutes.js";
+import aiRoutes from "./routes/aiRoutes.js";
+import superAdminRoutes from "./routes/superAdminRoutes.js";
+import seedStarterContent from "./services/seedContent.js";
 
 // =============================================================================
 // 2. INITIALIZE EXPRESS APPLICATION
 // =============================================================================
 
 const app = express();
+const clientDistDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../client/dist");
 
 // =============================================================================
 // 3. LOAD ENVIRONMENT CONFIGURATION
@@ -39,6 +48,28 @@ const PORT = process.env.PORT || 5000;
 
 const CLIENT_URL =
   process.env.CLIENT_URL || "http://localhost:5173";
+
+const allowedClientOrigins = new Set(
+  CLIENT_URL.split(",").map((origin) => origin.trim()).filter(Boolean)
+);
+
+// Allow local development servers on any Vite port while keeping production origin-specific.
+if (process.env.NODE_ENV !== "production") {
+  allowedClientOrigins.add("http://localhost:5173");
+  allowedClientOrigins.add("http://127.0.0.1:5173");
+  allowedClientOrigins.add("http://localhost:5174");
+  allowedClientOrigins.add("http://127.0.0.1:5174");
+}
+
+const isLocalDevelopmentOrigin = (origin) => {
+  if (process.env.NODE_ENV === "production" || !origin) return false;
+  try {
+    const parsedOrigin = new URL(origin);
+    return parsedOrigin.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsedOrigin.hostname) && Boolean(parsedOrigin.port);
+  } catch {
+    return false;
+  }
+};
 
 // =============================================================================
 // 4. APPLY SECURITY MIDDLEWARE
@@ -50,7 +81,13 @@ app.use(helmet());
 // Configure Cross-Origin Resource Sharing.
 app.use(
   cors({
-    origin: CLIENT_URL,
+    origin: (origin, callback) => {
+      if (!origin || allowedClientOrigins.has(origin) || isLocalDevelopmentOrigin(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("This origin is not allowed to access the CodeMaster API."));
+    },
     credentials: true,
   })
 );
@@ -96,9 +133,10 @@ app.use("/api", apiLimiter);
 // 6. HEALTH CHECK ROUTE
 // =============================================================================
 
+
 /*
 Function Name: Health Check
-Description: Checks whether the backend server is running.
+Description: Checks backend and MongoDB connection status.
 Input: HTTP GET request.
 Output: Server status and database connection status.
 Author: Your Name
@@ -106,10 +144,8 @@ Date: 23/11/2026
 */
 
 app.get("/api/health", (req, res) => {
-  const databaseConnected =
-    Boolean(
-      globalThis.mongooseConnectionReadyState === 1
-    );
+  // Check the actual Mongoose database connection state.
+  const databaseConnected = mongoose.connection.readyState === 1;
 
   res.status(200).json({
     success: true,
@@ -119,6 +155,7 @@ app.get("/api/health", (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
 
 // =============================================================================
 // 7. AUTHENTICATION API ROUTES
@@ -151,10 +188,23 @@ Date: 23/11/2026
 app.use("/api/admin", adminRoutes);
 
 // =============================================================================
-// 9. ROOT API ROUTE
+// 9. LEARNING, CONTENT, EXECUTION, AND AI API ROUTES
+// =============================================================================
+
+app.use("/api/content", contentRoutes);
+app.use("/api/learning", learningRoutes);
+app.use("/api/execution", executionRoutes);
+app.use("/api/ai", aiRoutes);
+app.use("/api/superadmin", superAdminRoutes);
+
+// =============================================================================
+// 10. ROOT API ROUTE
 // =============================================================================
 
 app.get("/", (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.sendFile(path.join(clientDistDirectory, "index.html"));
+  }
   res.status(200).json({
     success: true,
     message: "Welcome to CodeMaster API.",
@@ -162,8 +212,19 @@ app.get("/", (req, res) => {
   });
 });
 
+// Serve the Vite build from the same origin in production deployments.
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(clientDistDirectory, { index: false }));
+  app.get(/.*/, (req, res, next) => {
+    if (req.path.startsWith("/api/")) return next();
+    return res.sendFile(path.join(clientDistDirectory, "index.html"), (error) => {
+      if (error) next(error);
+    });
+  });
+}
+
 // =============================================================================
-// 10. HANDLE UNKNOWN API ROUTES
+// 11. HANDLE UNKNOWN API ROUTES
 // =============================================================================
 
 app.use((req, res) => {
@@ -174,7 +235,7 @@ app.use((req, res) => {
 });
 
 // =============================================================================
-// 11. GLOBAL ERROR HANDLER
+// 12. GLOBAL ERROR HANDLER
 // =============================================================================
 
 /*
@@ -201,7 +262,7 @@ app.use((error, req, res, next) => {
 });
 
 // =============================================================================
-// 12. START SERVER AFTER DATABASE CONNECTION
+// 13. START SERVER AFTER DATABASE CONNECTION
 // =============================================================================
 
 /*
@@ -217,6 +278,9 @@ const startServer = async () => {
   try {
     // Establish MongoDB connection before accepting requests.
     await connectDB();
+
+    // Add the starter curriculum once so a new database is usable immediately.
+    await seedStarterContent();
 
     // Start Express HTTP server.
     app.listen(PORT, () => {
@@ -239,7 +303,7 @@ const startServer = async () => {
 };
 
 // =============================================================================
-// 13. EXECUTE SERVER STARTUP
+// 14. EXECUTE SERVER STARTUP
 // =============================================================================
 
 startServer();

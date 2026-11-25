@@ -22,6 +22,7 @@ import {
 } from "../controllers/authController.js";
 
 import { protect } from "../middleware/authMiddleware.js";
+import { finishGitHubOAuth, finishGoogleOAuth, startGitHubOAuth, startGoogleOAuth } from "../controllers/oauthController.js";
 
 // =============================================================================
 // 2. INITIALIZE ROUTER
@@ -38,6 +39,12 @@ router.post("/register", registerStudent);
 
 // Authenticate an existing user.
 router.post("/login", loginUser);
+
+// Start or complete Google and GitHub sign-in or student registration.
+router.get("/google", startGoogleOAuth);
+router.get("/google/callback", finishGoogleOAuth);
+router.get("/github", startGitHubOAuth);
+router.get("/github/callback", finishGitHubOAuth);
 
 // =============================================================================
 // 4. PROTECTED AUTHENTICATION ROUTES

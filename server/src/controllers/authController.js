@@ -29,7 +29,7 @@ Author: Your Name
 Date: 23/11/2026
 */
 
-const generateToken = (userId) => {
+export const generateToken = (userId) => {
   return jwt.sign(
     { id: userId.toString() },
     process.env.JWT_SECRET,
